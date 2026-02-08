@@ -111,13 +111,13 @@ async def open_inbox(message: Message):
 # Книга листів (Історія листувань)
 
 @router.message(F.text == "📚 Історія листувань")
-async def open_book_of_letters(message: Message):
+async def open_book_of_letters(message: Message, state: FSMContext):
     user_id = message.from_user.id
     is_admin = await db.is_user_admin(user_id)
     
-    letters, total_count = await db.get_all_user_letters(user_id, page=0, page_size=keyboards.ALL_LETTERS_PAGE_SIZE)
+    conversations, total_count = await db.get_conversation_list(user_id, page=0, page_size=keyboards.ALL_LETTERS_PAGE_SIZE)
     
-    if not letters:
+    if not conversations:
         await message.answer(MESSAGES['book_empty'], reply_markup=await keyboards.reply_options(is_admin))
         return
     
@@ -129,17 +129,18 @@ async def open_book_of_letters(message: Message):
         total=total_pages
     )
     
-    await message.answer(text, reply_markup=await keyboards.book_of_letters(letters, page=0, total_pages=total_pages))
+    await state.update_data(book_page=0)
+    await message.answer(text, reply_markup=await keyboards.book_of_letters(conversations, page=0, total_pages=total_pages))
 
 @router.callback_query(F.data.startswith("book_page_"))
-async def change_book_page(callback: CallbackQuery):
+async def change_book_page(callback: CallbackQuery, state: FSMContext):
     page = int(callback.data.split("_")[2])
     user_id = callback.from_user.id
     
-    letters, total_count = await db.get_all_user_letters(user_id, page=page, page_size=keyboards.ALL_LETTERS_PAGE_SIZE)
+    conversations, total_count = await db.get_conversation_list(user_id, page=page, page_size=keyboards.ALL_LETTERS_PAGE_SIZE)
     total_pages = math.ceil(total_count / keyboards.ALL_LETTERS_PAGE_SIZE)
 
-    if not letters and page > 0:
+    if not conversations and page > 0:
         await callback.answer("Сторінка більше недоступна")
         return
 
@@ -149,42 +150,84 @@ async def change_book_page(callback: CallbackQuery):
         total=total_pages
     )
 
+    await state.update_data(book_page=page)
     await callback.message.edit_text(
         text,
-        reply_markup=await keyboards.book_of_letters(letters, page=page, total_pages=total_pages)
+        reply_markup=await keyboards.book_of_letters(conversations, page=page, total_pages=total_pages)
     )
     await callback.answer()
 
-@router.callback_query(F.data.startswith("book_letter_"))
-async def read_book_letter(callback: CallbackQuery, state: FSMContext):
-    letter_id = callback.data.split("_")[2]
-    letter = await db.get_letter(letter_id)
+@router.callback_query(F.data.startswith("book_thread_"))
+async def open_book_thread(callback: CallbackQuery, state: FSMContext):
+    other_id = int(callback.data.split("_")[2])
+    me_id = callback.from_user.id
+    page = 0
 
-    if not letter:
-        await callback.answer(MESSAGES['letter_not_found'], show_alert=True)
-        return
-    
-    await state.update_data(current_letter_id=letter_id)
-    await callback.message.delete()
-    
-    content = letter.get('content', '')
-    date_sent = letter.get('created_at').strftime('%d.%m.%Y %H:%M')
-    nickname = letter.get('nickname', 'Анонім')
-    
-    # Визначимо чи це отриманий чи відправлений лист
-    is_received = letter.get('recipient_id') == callback.from_user.id
-    letter_type = "📨 <b>Отриманий лист</b>" if is_received else "📤 <b>Відправлений лист</b>"
-    
-    text = (
-        f"{letter_type}\n"
-        f"👤 <i>{nickname}</i>\n"
-        f"📅 <i>{date_sent}</i>\n"
-        f"〰️〰️〰️〰️〰️〰️〰️\n\n"
-        f"<blockquote>{content}</blockquote>\n\n"
-        f"〰️〰️〰️〰️〰️〰️〰️"
+    page_letters, total_pages, current_page, total_letters = await db.get_dialogue_history_with_pagination(
+        me_id, other_id, page=page, letters_per_page=2
     )
-    
-    await callback.message.answer(text, reply_markup=await keyboards.letter_options(letter_id))
+
+    if not page_letters:
+        await callback.answer(MESSAGES['thread_empty'], show_alert=True)
+        return
+
+    await state.update_data(
+        history_other_id=other_id,
+        history_page=page,
+        history_me_id=me_id,
+        history_from_book=True
+    )
+
+    start_letter_num = page * 2 + 1
+    end_letter_num = start_letter_num + len(page_letters) - 1
+    text_lines = [f"📜 <b>Історія листування</b> (листи {start_letter_num}-{end_letter_num} з {total_letters})\n〰️〰️〰️〰️〰️〰️\n"]
+
+    for msg in page_letters:
+        is_me = msg.get('sender_id') == me_id
+        if is_me:
+            role = "🫵 <b>Ви</b>"
+        else:
+            nickname = msg.get('nickname', 'Анонім')
+            role = f"🦉 <b>{nickname}</b>"
+
+        created_at = msg.get('created_at')
+        if created_at:
+            date = created_at.strftime('%d.%m %H:%M')
+        else:
+            date = "??.??"
+
+        content = msg.get('content', '[Текст відсутній]')
+        text_lines.append(f"{role} [{date}]:\n{content}\n")
+
+    full_text = "\n".join(text_lines)
+    await callback.message.edit_text(full_text, parse_mode="HTML", reply_markup=await keyboards.history_nav_book(current_page, total_pages))
+
+@router.callback_query(F.data == "back_to_book")
+async def back_to_book(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    page = data.get("book_page", 0)
+    user_id = callback.from_user.id
+
+    conversations, total_count = await db.get_conversation_list(user_id, page=page, page_size=keyboards.ALL_LETTERS_PAGE_SIZE)
+    total_pages = math.ceil(total_count / keyboards.ALL_LETTERS_PAGE_SIZE)
+
+    if not conversations and page > 0:
+        page = 0
+        conversations, total_count = await db.get_conversation_list(user_id, page=page, page_size=keyboards.ALL_LETTERS_PAGE_SIZE)
+        total_pages = math.ceil(total_count / keyboards.ALL_LETTERS_PAGE_SIZE)
+        await state.update_data(book_page=page)
+
+    text = MESSAGES['book_of_letters_prompt'].format(
+        count=total_count,
+        page=page + 1,
+        total=total_pages
+    )
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=await keyboards.book_of_letters(conversations, page=page, total_pages=total_pages)
+    )
+    await callback.answer()
 
 @router.callback_query(F.data == "close_book")
 async def close_book(callback: CallbackQuery, state: FSMContext):
@@ -269,7 +312,8 @@ async def view_history(message: Message, state: FSMContext):
     await state.update_data(
         history_other_id=other_id, 
         history_page=page,
-        history_me_id=me_id
+        history_me_id=me_id,
+        history_from_book=False
     )
 
     start_letter_num = page * 2 + 1
@@ -644,14 +688,45 @@ async def change_history_page(callback: CallbackQuery, state: FSMContext):
         text_lines.append(f"{role} [{date}]:\n{content}\n")
 
     full_text = "\n".join(text_lines)
-    await callback.message.edit_text(full_text, parse_mode="HTML", reply_markup=await keyboards.history_nav_v2(current_page, total_pages))
+    if data.get("history_from_book"):
+        nav_markup = await keyboards.history_nav_book(current_page, total_pages)
+    else:
+        nav_markup = await keyboards.history_nav_v2(current_page, total_pages)
+    await callback.message.edit_text(full_text, parse_mode="HTML", reply_markup=nav_markup)
     await callback.answer()
 
 @router.callback_query(F.data == "close_history")
 async def close_history(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    if data.get("history_from_book"):
+        page = data.get("book_page", 0)
+        user_id = callback.from_user.id
+
+        conversations, total_count = await db.get_conversation_list(user_id, page=page, page_size=keyboards.ALL_LETTERS_PAGE_SIZE)
+        total_pages = math.ceil(total_count / keyboards.ALL_LETTERS_PAGE_SIZE)
+
+        if not conversations and page > 0:
+            page = 0
+            conversations, total_count = await db.get_conversation_list(user_id, page=page, page_size=keyboards.ALL_LETTERS_PAGE_SIZE)
+            total_pages = math.ceil(total_count / keyboards.ALL_LETTERS_PAGE_SIZE)
+            await state.update_data(book_page=page)
+
+        text = MESSAGES['book_of_letters_prompt'].format(
+            count=total_count,
+            page=page + 1,
+            total=total_pages
+        )
+
+        await state.update_data(history_other_id=None, history_page=None, history_me_id=None, history_from_book=None)
+        await callback.message.edit_text(
+            text,
+            reply_markup=await keyboards.book_of_letters(conversations, page=page, total_pages=total_pages)
+        )
+        await callback.answer()
+        return
+
     await callback.message.delete()
 
-    data = await state.get_data()
     letter_id = data.get("current_letter_id")
 
     if not letter_id:

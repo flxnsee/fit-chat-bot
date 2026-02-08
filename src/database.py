@@ -346,7 +346,6 @@ async def archive_letter(letter_id: str):
     )
 
 async def archive_all_letters(user_id: int):
-    """Архівувати всі доставлені листи користувача"""
     try:
         result = await letters_collection.update_many(
             {
@@ -366,7 +365,6 @@ async def archive_all_letters(user_id: int):
         return 0
 
 async def get_users_communicated_with(user_id: int) -> list[int]:
-    """Отримати список user_id з якими користувач обмінювався листами"""
     try:
         pipeline = [
             {
@@ -692,16 +690,6 @@ async def close_report(letter_id: str, admin_id: int, resolution: str):
         return False
 
 async def get_dialogue_history_with_pagination(user_id: int, other_user_id: int, page: int = 0, letters_per_page: int = 2) -> tuple:
-    """
-    Отримати всю історію листів з користувачем для однієї сторінки.
-    Показує фіксовану кількість листів на сторінку.
-    
-    Повертає кортеж:
-    - page_letters: список листів, які вмістилися на цій сторінці
-    - total_pages: загальна кількість сторінок
-    - current_page: поточна сторінка (0-indexed)
-    - total_letters: загальна кількість листів в діалозі
-    """
     try:
         query = {
             "$or": [
@@ -791,4 +779,84 @@ async def get_all_user_letters(user_id: int, page: int = 0, page_size: int = 4):
     
     except PyMongoError as e:
         logger.error(f"Error retrieving all user letters {user_id}: {e}")
+        return [], 0
+
+async def get_conversation_list(user_id: int, page: int = 0, page_size: int = 4):
+    """Отримати список діалогів користувача з останньою активністю"""
+    try:
+        base_match = {
+            "status": "delivered",
+            "$or": [
+                {"recipient_id": user_id},
+                {"sender_id": user_id}
+            ]
+        }
+
+        count_pipeline = [
+            {"$match": base_match},
+            {"$project": {
+                "other_id": {
+                    "$cond": [
+                        {"$eq": ["$sender_id", user_id]},
+                        "$recipient_id",
+                        "$sender_id"
+                    ]
+                }
+            }},
+            {"$group": {"_id": "$other_id"}},
+            {"$count": "total"}
+        ]
+
+        count_cursor = letters_collection.aggregate(count_pipeline)
+        count_docs = await count_cursor.to_list(length=1)
+        total_count = count_docs[0]["total"] if count_docs else 0
+
+        list_pipeline = [
+            {"$match": base_match},
+            {"$project": {
+                "other_id": {
+                    "$cond": [
+                        {"$eq": ["$sender_id", user_id]},
+                        "$recipient_id",
+                        "$sender_id"
+                    ]
+                },
+                "created_at": 1
+            }},
+            {"$sort": {"created_at": -1}},
+            {"$group": {
+                "_id": "$other_id",
+                "last_date": {"$first": "$created_at"}
+            }},
+            {"$sort": {"last_date": -1}},
+            {"$skip": page * page_size},
+            {"$limit": page_size}
+        ]
+
+        list_cursor = letters_collection.aggregate(list_pipeline)
+        convo_rows = await list_cursor.to_list(length=page_size)
+
+        nickname_pipeline = [
+            {"$match": {"recipient_id": user_id, "status": "delivered"}},
+            {"$sort": {"created_at": -1}},
+            {"$group": {"_id": "$sender_id", "nickname": {"$first": "$nickname"}}}
+        ]
+
+        nickname_cursor = letters_collection.aggregate(nickname_pipeline)
+        nickname_rows = await nickname_cursor.to_list(length=None)
+        nickname_map = {row["_id"]: row.get("nickname", "Анонім") for row in nickname_rows}
+
+        conversations = []
+        for row in convo_rows:
+            other_id = row.get("_id")
+            conversations.append({
+                "other_id": other_id,
+                "last_date": row.get("last_date"),
+                "nickname": nickname_map.get(other_id, "Анонім")
+            })
+
+        return conversations, total_count
+    
+    except PyMongoError as e:
+        logger.error(f"Error retrieving conversation list for user {user_id}: {e}")
         return [], 0

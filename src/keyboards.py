@@ -188,24 +188,19 @@ async def letter_ban(user_id):
 # Книга листів (Історія листувань)
 ALL_LETTERS_PAGE_SIZE = 4
 
-async def book_of_letters(letters, total_pages: int, page: int = 0):
-    """Клавіатура з листами для Книги листів"""
+async def book_of_letters(conversations, total_pages: int, page: int = 0):
+    """Клавіатура зі списком діалогів для Книги листів"""
     builder = InlineKeyboardBuilder()
 
-    if not letters:
+    if not conversations:
         builder.row(InlineKeyboardButton(text="🔙 Закрити", callback_data="close_book"))
         return builder.as_markup()
 
-    for letter in letters:
-        nickname = letter.get('nickname', 'Анонім')
-        created_at = letter.get('created_at')
-        time_str = created_at.strftime('%d.%m') if created_at else "??.??"
-        
-        sent_to = "◀️" if letter.get('sender_id') else "▶️"
-        
-        btn_text = f"{sent_to} {nickname} [{time_str}]"
+    for convo in conversations:
+        nickname = convo.get('nickname', 'Анонім')
+        btn_text = f"[Лист] Ви <---> {nickname}"
 
-        builder.add(InlineKeyboardButton(text=btn_text, callback_data=f"book_letter_{letter['_id']}"))
+        builder.add(InlineKeyboardButton(text=btn_text, callback_data=f"book_thread_{convo['other_id']}"))
 
     builder.adjust(1)
 
@@ -220,5 +215,27 @@ async def book_of_letters(letters, total_pages: int, page: int = 0):
         builder.row(*nav_row)
 
     builder.row(InlineKeyboardButton(text="🔙 Закрити Книгу", callback_data="close_book"))
+
+    return builder.as_markup()
+
+async def book_letter_back():
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔙 Повернутися до історії", callback_data="back_to_book"))
+    return builder.as_markup()
+
+async def history_nav_book(page: int, total_pages: int):
+    builder = InlineKeyboardBuilder()
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"history_page_{page - 1}"))
+    
+    nav_row.append(InlineKeyboardButton(text=f"{page + 1}/{total_pages}", callback_data="noop"))
+    
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton(text="Далі ➡️", callback_data=f"history_page_{page + 1}"))
+    
+    builder.row(*nav_row)
+    builder.row(InlineKeyboardButton(text="🔙 Повернутися до історії", callback_data="close_history"))
 
     return builder.as_markup()
