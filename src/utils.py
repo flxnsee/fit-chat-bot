@@ -12,6 +12,17 @@ BAD_WORDS = [
     "чмо", "лох", "чмирь", "дебіл", "ідіот", "придурок"
 ]
 
+# Регулярний вираз для виявлення посилань
+URL_PATTERN = re.compile(
+    r'(?:http[s]?://[^\s]+|'  # HTTP/HTTPS посилання
+    r'www\.[^\s]+|'            # www посилання
+    r'ftp://[^\s]+|'           # FTP посилання
+    r't\.me/[^\s]+|'           # Telegram посилання
+    r'@\w+|'                   # Telegram username (@username)
+    r'(?:https?://)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}[^\s]*)',  # Доменні імена
+    re.IGNORECASE
+)
+
 def contains_bad_words(text: str) -> bool:
     text_lower = text.lower()
 
@@ -20,3 +31,7 @@ def contains_bad_words(text: str) -> bool:
             return True
         
     return False
+
+def contains_links_or_urls(text: str) -> bool:
+    """Перевіряє чи текст содержит посилання або URL-адреса"""
+    return bool(URL_PATTERN.search(text))

@@ -51,6 +51,10 @@ async def send_letter(message: Message, state: FSMContext):
         await message.answer(MESSAGES['bad_words_warning'])
         return
 
+    if utils.contains_links_or_urls(content):
+        await message.answer("❌ Посилання неприпустимі у листах!")
+        return
+
     if len(content) < 10:
         await message.answer(MESSAGES['letter_too_short_error'])
         return
