@@ -187,7 +187,7 @@ async def open_book_thread(callback: CallbackQuery, state: FSMContext):
         if is_me:
             role = "🫵 <b>Ви</b>"
         else:
-            nickname = msg.get('nickname', 'Анонім')
+            nickname = await db.get_conversation_nickname(me_id, other_id)
             role = f"🦉 <b>{nickname}</b>"
 
         created_at = msg.get('created_at')
@@ -277,7 +277,11 @@ async def read_letter(callback: CallbackQuery, state: FSMContext):
     
     content = letter.get('content', '')
     date_sent = letter.get('created_at').strftime('%d.%m.%Y %H:%M')
-    nickname = letter.get('nickname', 'Анонім')
+    sender_id = letter.get('sender_id')
+    recipient_id = letter.get('recipient_id')
+    me_id = callback.from_user.id
+    other_id = sender_id if sender_id != me_id else recipient_id
+    nickname = await db.get_conversation_nickname(me_id, other_id)
     text = MESSAGES["inbox_letter_format"].format(date=date_sent, content=content, nickname=nickname)
     
     await callback.message.answer(text, reply_markup=await keyboards.letter_options(letter_id))
@@ -319,15 +323,13 @@ async def view_history(message: Message, state: FSMContext):
     start_letter_num = page * 2 + 1
     end_letter_num = start_letter_num + len(page_letters) - 1
     text_lines = [f"📜 <b>Історія листування</b> (листи {start_letter_num}-{end_letter_num} з {total_letters})\n〰️〰️〰️〰️〰️〰️\n"]
-    end_letter_num = start_letter_num + len(page_letters) - 1
-    text_lines = [f"📜 <b>Історія листування</b> (листи {start_letter_num}-{end_letter_num} з {total_letters})\n〰️〰️〰️〰️〰️〰️\n"]
 
     for msg in page_letters:
         is_me = msg.get('sender_id') == me_id
         if is_me:
             role = "🫵 <b>Ви</b>"
         else:
-            nickname = msg.get('nickname', 'Анонім')
+            nickname = await db.get_conversation_nickname(me_id, other_id)
             role = f"🦉 <b>{nickname}</b>"
         
         created_at = msg.get('created_at')
@@ -360,7 +362,11 @@ async def rename_letter_start(message: Message, state: FSMContext):
         await message.answer("❌ Лист не знайдено!")
         return
 
-    current_nickname = letter.get('nickname', 'Анонім')
+    me_id = message.from_user.id
+    sender_id = letter.get('sender_id')
+    recipient_id = letter.get('recipient_id')
+    other_id = sender_id if sender_id != me_id else recipient_id
+    current_nickname = await db.get_conversation_nickname(me_id, other_id)
     await state.update_data(renaming_letter_id=letter_id)
     
     msg = await message.answer("*", reply_markup=ReplyKeyboardRemove())
@@ -388,7 +394,11 @@ async def cancel_rename_letter(message: Message, state: FSMContext):
     
     content = letter.get('content', '')
     date_sent = letter.get('created_at').strftime('%d.%m.%Y %H:%M')
-    nickname = letter.get('nickname', 'Анонім')
+    me_id = message.from_user.id
+    sender_id = letter.get('sender_id')
+    recipient_id = letter.get('recipient_id')
+    other_id = sender_id if sender_id != me_id else recipient_id
+    nickname = await db.get_conversation_nickname(me_id, other_id)
     text = MESSAGES["inbox_letter_format"].format(date=date_sent, content=content, nickname=nickname)
     
     await message.answer(text, reply_markup=await keyboards.letter_options(letter_id))
@@ -417,7 +427,11 @@ async def process_rename_letter(message: Message, state: FSMContext):
         letter = await db.get_letter(letter_id)
         content = letter.get('content', '')
         date_sent = letter.get('created_at').strftime('%d.%m.%Y %H:%M')
-        nickname = letter.get('nickname', 'Анонім')
+        me_id = message.from_user.id
+        sender_id = letter.get('sender_id')
+        recipient_id = letter.get('recipient_id')
+        other_id = sender_id if sender_id != me_id else recipient_id
+        nickname = await db.get_conversation_nickname(me_id, other_id)
         text = MESSAGES["inbox_letter_format"].format(date=date_sent, content=content, nickname=nickname)
         
         await message.answer(
@@ -532,6 +546,7 @@ async def view_thread_dialog(message: Message, state: FSMContext):
         return
 
     me_id = message.from_user.id
+    other_id = letter['sender_id'] if letter['sender_id'] != me_id else letter['recipient_id']
 
     page_size = 10
     page = 0
@@ -556,7 +571,7 @@ async def view_thread_dialog(message: Message, state: FSMContext):
         if is_me:
             role = "🫵 Ви"
         else:
-            nickname = msg.get('nickname', 'Анонім')
+            nickname = await db.get_conversation_nickname(me_id, other_id)
             role = f"🦉 {nickname}"
         
         created_at = msg.get('created_at')
@@ -620,7 +635,7 @@ async def view_all_letters(message: Message, state: FSMContext):
         if is_me:
             role = "🫵 Ви"
         else:
-            nickname = msg.get('nickname', 'Анонім')
+            nickname = await db.get_conversation_nickname(me_id, other_id)
             role = f"🦉 {nickname}"
         
         created_at = msg.get('created_at')
@@ -675,7 +690,7 @@ async def change_history_page(callback: CallbackQuery, state: FSMContext):
         if is_me:
             role = "🫵 <b>Ви</b>"
         else:
-            nickname = msg.get('nickname', 'Анонім')
+            nickname = await db.get_conversation_nickname(me_id, other_id)
             role = f"🦉 <b>{nickname}</b>"
 
         created_at = msg.get('created_at')
@@ -742,7 +757,11 @@ async def close_history(callback: CallbackQuery, state: FSMContext):
     content = letter.get('content', '')
     created_at = letter.get('created_at')
     date_str = created_at.strftime('%d.%m %H:%M') if created_at else "Невідомо"
-    nickname = letter.get('nickname', 'Анонім')
+    me_id = callback.from_user.id
+    sender_id = letter.get('sender_id')
+    recipient_id = letter.get('recipient_id')
+    other_id = sender_id if sender_id != me_id else recipient_id
+    nickname = await db.get_conversation_nickname(me_id, other_id)
     
     await state.update_data(history_other_id=None, history_page=None, history_me_id=None)
     

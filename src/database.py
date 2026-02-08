@@ -25,6 +25,7 @@ except Exception as e:
 db = client['fit_chat_bot']
 users_collection = db['users']
 letters_collection = db['letters']
+conversation_nicknames_collection = db['conversation_nicknames']  # Для збереження кастомних імен користувачів
 
 async def init_indexes():
     try:
@@ -34,6 +35,8 @@ async def init_indexes():
         await letters_collection.create_index([("deliver_at", 1), ("status", 1)])
         await users_collection.create_index("hobbies")
         await users_collection.create_index("course")
+        # Індекс для швидкого пошуку кастомних імен
+        await conversation_nicknames_collection.create_index([("user_id", 1), ("other_user_id", 1)], unique=True)
 
         logger.info("Indexes created successfully")
     except PyMongoError as e:
@@ -194,10 +197,6 @@ async def create_letter(sender_id: int, recipient_id: int, content: str, delay_h
     try:
         deliver_at = datetime.now() + timedelta(hours = delay_hours)
 
-        # Генерація номеру для анонімного імені
-        anonymous_number = await get_next_anonymous_number(recipient_id)
-        default_nickname = f"Анонім {anonymous_number}"
-
         letter = {
             "sender_id": sender_id,
             "recipient_id": recipient_id,
@@ -207,8 +206,7 @@ async def create_letter(sender_id: int, recipient_id: int, content: str, delay_h
             "is_archived": False,
             "parent_id": ObjectId(parent_id) if parent_id else None,
             "created_at": datetime.now(),
-            "deliver_at": deliver_at,
-            "nickname": default_nickname
+            "deliver_at": deliver_at
         }
 
         await letters_collection.insert_one(letter)
@@ -288,6 +286,12 @@ async def get_inbox(user_id: int, page: int = 0, page_size: int = 5) -> List[dic
                     .limit(page_size)
         
         letters = await cursor.to_list(length = page_size)
+
+        # Додаємо nickname до кожного листа
+        for letter in letters:
+            sender_id = letter.get('sender_id')
+            if sender_id:
+                letter['nickname'] = await get_conversation_nickname(user_id, sender_id)
 
         return letters, total_count
     
@@ -711,6 +715,13 @@ async def get_dialogue_history_with_pagination(user_id: int, other_user_id: int,
         cursor = letters_collection.find(query).sort("created_at", 1).skip(skip).limit(letters_per_page)
         page_letters = await cursor.to_list(length=letters_per_page)
         
+        # Додаємо nickname до кожного листа
+        nickname = await get_conversation_nickname(user_id, other_user_id)
+        for letter in page_letters:
+            # Додаємо nickname тільки для листів від other_user_id
+            if letter.get('sender_id') == other_user_id:
+                letter['nickname'] = nickname
+        
         return page_letters, total_pages, page, total_letters
     
     except PyMongoError as e:
@@ -730,8 +741,28 @@ async def get_next_anonymous_number(recipient_id: int) -> int:
         logger.error(f"Error getting next anonymous number: {e}")
         return 1
 
+async def get_conversation_nickname(user_id: int, other_user_id: int) -> str:
+    """Отримати nickname для розмови (або дефолтне ім'я якщо кастомне не встановлене)"""
+    try:
+        # Шукаємо кастомне ім'я в окремій колекції
+        custom_nickname = await conversation_nicknames_collection.find_one({
+            'user_id': user_id,
+            'other_user_id': other_user_id
+        })
+        
+        if custom_nickname:
+            return custom_nickname.get('nickname', 'Анонім')
+        
+        # Якщо кастомного немає, генеруємо дефолтне
+        anonymous_number = await get_next_anonymous_number(user_id)
+        return f"Анонім {anonymous_number}"
+    
+    except PyMongoError as e:
+        logger.error(f"Error getting conversation nickname: {e}")
+        return "Анонім"
+
 async def update_letter_nickname(letter_id: str, new_nickname: str) -> bool:
-    """Оновити нікнейм листа"""
+    """Оновити нікнейм для розмови (зберігається для всіх листів від цього користувача)"""
     try:
         if not ObjectId.is_valid(letter_id):
             return False
@@ -743,17 +774,32 @@ async def update_letter_nickname(letter_id: str, new_nickname: str) -> bool:
         if len(new_nickname.strip()) == 0:
             return False
         
-        result = await letters_collection.update_one(
-            {'_id': ObjectId(letter_id)},
+        # Отримуємо лист щоб дізнатися sender_id та recipient_id
+        letter = await get_letter(letter_id)
+        if not letter:
+            return False
+        
+        recipient_id = letter['recipient_id']
+        sender_id = letter['sender_id']
+        
+        # Зберігаємо кастомне ім'я в окремій колекції
+        await conversation_nicknames_collection.update_one(
+            {
+                'user_id': recipient_id,
+                'other_user_id': sender_id
+            },
             {
                 '$set': {
-                    'nickname': new_nickname.strip()
+                    'nickname': new_nickname.strip(),
+                    'updated_at': datetime.now()
                 }
-            }
+            },
+            upsert=True
         )
-        return result.modified_count > 0
+        
+        return True
     except PyMongoError as e:
-        logger.error(f"Error updating letter nickname: {e}")
+        logger.error(f"Error updating conversation nickname: {e}")
         return False
 
 async def get_all_user_letters(user_id: int, page: int = 0, page_size: int = 4):
@@ -836,23 +882,15 @@ async def get_conversation_list(user_id: int, page: int = 0, page_size: int = 4)
         list_cursor = letters_collection.aggregate(list_pipeline)
         convo_rows = await list_cursor.to_list(length=page_size)
 
-        nickname_pipeline = [
-            {"$match": {"recipient_id": user_id, "status": "delivered"}},
-            {"$sort": {"created_at": -1}},
-            {"$group": {"_id": "$sender_id", "nickname": {"$first": "$nickname"}}}
-        ]
-
-        nickname_cursor = letters_collection.aggregate(nickname_pipeline)
-        nickname_rows = await nickname_cursor.to_list(length=None)
-        nickname_map = {row["_id"]: row.get("nickname", "Анонім") for row in nickname_rows}
-
+        # Отримуємо кастомні імена з окремої колекції
         conversations = []
         for row in convo_rows:
             other_id = row.get("_id")
+            nickname = await get_conversation_nickname(user_id, other_id)
             conversations.append({
                 "other_id": other_id,
                 "last_date": row.get("last_date"),
-                "nickname": nickname_map.get(other_id, "Анонім")
+                "nickname": nickname
             })
 
         return conversations, total_count

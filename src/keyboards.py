@@ -189,7 +189,6 @@ async def letter_ban(user_id):
 ALL_LETTERS_PAGE_SIZE = 4
 
 async def book_of_letters(conversations, total_pages: int, page: int = 0):
-    """Клавіатура зі списком діалогів для Книги листів"""
     builder = InlineKeyboardBuilder()
 
     if not conversations:
