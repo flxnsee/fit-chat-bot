@@ -194,7 +194,11 @@ async def view_history(message: Message, state: FSMContext):
 
     for msg in page_letters:
         is_me = msg.get('sender_id') == me_id
-        role = "🫵 <b>Ви</b>" if is_me else "🦉 <b>Незнайомець</b>"
+        if is_me:
+            role = "🫵 <b>Ви</b>"
+        else:
+            nickname = msg.get('nickname', 'Анонім')
+            role = f"🦉 <b>{nickname}</b>"
         
         created_at = msg.get('created_at')
         if created_at:
@@ -419,7 +423,11 @@ async def view_thread_dialog(message: Message, state: FSMContext):
 
     for msg in thread:
         is_me = msg.get('sender_id') == me_id
-        role = "🫵 Ви" if is_me else "🦉 Незнайомець"
+        if is_me:
+            role = "🫵 Ви"
+        else:
+            nickname = msg.get('nickname', 'Анонім')
+            role = f"🦉 {nickname}"
         
         created_at = msg.get('created_at')
         if created_at:
@@ -479,7 +487,11 @@ async def view_all_letters(message: Message, state: FSMContext):
 
     for msg in history:
         is_me = msg.get('sender_id') == me_id
-        role = "🫵 Ви" if is_me else "🦉 Незнайомець"
+        if is_me:
+            role = "🫵 Ви"
+        else:
+            nickname = msg.get('nickname', 'Анонім')
+            role = f"🦉 {nickname}"
         
         created_at = msg.get('created_at')
         if created_at:
@@ -530,7 +542,11 @@ async def change_history_page(callback: CallbackQuery, state: FSMContext):
 
     for msg in page_letters:
         is_me = msg.get('sender_id') == me_id
-        role = "🫵 <b>Ви</b>" if is_me else "🦉 <b>Незнайомець</b>"
+        if is_me:
+            role = "🫵 <b>Ви</b>"
+        else:
+            nickname = msg.get('nickname', 'Анонім')
+            role = f"🦉 <b>{nickname}</b>"
 
         created_at = msg.get('created_at')
         if created_at:

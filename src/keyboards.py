@@ -135,7 +135,7 @@ async def letter_options(letter_id):
     builder = ReplyKeyboardBuilder()
     
     builder.row(KeyboardButton(text="✍️ Відповісти"))
-    builder.row(KeyboardButton(text="� Перейменувати"), KeyboardButton(text="📜 Історія листування"))
+    builder.row(KeyboardButton(text="📝 Перейменувати"), KeyboardButton(text="📜 Історія листування"))
     builder.row(KeyboardButton(text="🗃 Архівувати"), KeyboardButton(text="⚠️ Поскаржитись"))
     builder.row(KeyboardButton(text="🔙 Назад до вхідних"))
 
