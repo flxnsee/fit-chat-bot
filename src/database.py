@@ -767,3 +767,28 @@ async def update_letter_nickname(letter_id: str, new_nickname: str) -> bool:
     except PyMongoError as e:
         logger.error(f"Error updating letter nickname: {e}")
         return False
+
+async def get_all_user_letters(user_id: int, page: int = 0, page_size: int = 4):
+    """Отримати всі листи користувача (як отримані, так і відправлені)"""
+    try:
+        query = {
+            "$or": [
+                {"recipient_id": user_id, "status": "delivered"},
+                {"sender_id": user_id, "status": "delivered"}
+            ]
+        }
+
+        total_count = await letters_collection.count_documents(query)
+
+        cursor = letters_collection.find(query)\
+            .sort([("created_at", -1)])\
+                .skip(page * page_size)\
+                    .limit(page_size)
+        
+        letters = await cursor.to_list(length=page_size)
+
+        return letters, total_count
+    
+    except PyMongoError as e:
+        logger.error(f"Error retrieving all user letters {user_id}: {e}")
+        return [], 0

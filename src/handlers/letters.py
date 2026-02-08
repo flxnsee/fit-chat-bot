@@ -108,6 +108,92 @@ async def open_inbox(message: Message):
         reply_markup=await keyboards.inbox_list(letters, page=0, total_pages=total_pages)
     )
 
+# Книга листів (Історія листувань)
+
+@router.message(F.text == "📚 Історія листувань")
+async def open_book_of_letters(message: Message):
+    user_id = message.from_user.id
+    is_admin = await db.is_user_admin(user_id)
+    
+    letters, total_count = await db.get_all_user_letters(user_id, page=0, page_size=keyboards.ALL_LETTERS_PAGE_SIZE)
+    
+    if not letters:
+        await message.answer(MESSAGES['book_empty'], reply_markup=await keyboards.reply_options(is_admin))
+        return
+    
+    total_pages = math.ceil(total_count / keyboards.ALL_LETTERS_PAGE_SIZE)
+    
+    text = MESSAGES['book_of_letters_prompt'].format(
+        count=total_count, 
+        page=1, 
+        total=total_pages
+    )
+    
+    await message.answer(text, reply_markup=await keyboards.book_of_letters(letters, page=0, total_pages=total_pages))
+
+@router.callback_query(F.data.startswith("book_page_"))
+async def change_book_page(callback: CallbackQuery):
+    page = int(callback.data.split("_")[2])
+    user_id = callback.from_user.id
+    
+    letters, total_count = await db.get_all_user_letters(user_id, page=page, page_size=keyboards.ALL_LETTERS_PAGE_SIZE)
+    total_pages = math.ceil(total_count / keyboards.ALL_LETTERS_PAGE_SIZE)
+
+    if not letters and page > 0:
+        await callback.answer("Сторінка більше недоступна")
+        return
+
+    text = MESSAGES['book_of_letters_prompt'].format(
+        count=total_count,
+        page=page + 1,
+        total=total_pages
+    )
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=await keyboards.book_of_letters(letters, page=page, total_pages=total_pages)
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("book_letter_"))
+async def read_book_letter(callback: CallbackQuery, state: FSMContext):
+    letter_id = callback.data.split("_")[2]
+    letter = await db.get_letter(letter_id)
+
+    if not letter:
+        await callback.answer(MESSAGES['letter_not_found'], show_alert=True)
+        return
+    
+    await state.update_data(current_letter_id=letter_id)
+    await callback.message.delete()
+    
+    content = letter.get('content', '')
+    date_sent = letter.get('created_at').strftime('%d.%m.%Y %H:%M')
+    nickname = letter.get('nickname', 'Анонім')
+    
+    # Визначимо чи це отриманий чи відправлений лист
+    is_received = letter.get('recipient_id') == callback.from_user.id
+    letter_type = "📨 <b>Отриманий лист</b>" if is_received else "📤 <b>Відправлений лист</b>"
+    
+    text = (
+        f"{letter_type}\n"
+        f"👤 <i>{nickname}</i>\n"
+        f"📅 <i>{date_sent}</i>\n"
+        f"〰️〰️〰️〰️〰️〰️〰️\n\n"
+        f"<blockquote>{content}</blockquote>\n\n"
+        f"〰️〰️〰️〰️〰️〰️〰️"
+    )
+    
+    await callback.message.answer(text, reply_markup=await keyboards.letter_options(letter_id))
+
+@router.callback_query(F.data == "close_book")
+async def close_book(callback: CallbackQuery, state: FSMContext):
+    is_admin = await db.is_user_admin(callback.from_user.id)
+    await state.clear()
+    await callback.message.delete()
+    await callback.message.answer(MESSAGES['menu_prompt'], reply_markup=await keyboards.reply_options(is_admin))
+
+
 @router.callback_query(F.data.startswith("inbox_page_"))
 async def change_inbox_page(callback: CallbackQuery):
     page = int(callback.data.split("_")[2])

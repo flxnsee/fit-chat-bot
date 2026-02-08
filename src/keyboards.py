@@ -60,6 +60,7 @@ async def reply_options(is_admin: bool = False):
     
     builder.row(KeyboardButton(text="✍️ Написати листа"))
     builder.row(KeyboardButton(text="📬 Вхідні листи"), KeyboardButton(text="👤 Профіль"))
+    builder.row(KeyboardButton(text="📚 Історія листувань"))
 
     if is_admin:
         builder.row(KeyboardButton(text="🔐 Адмін-панель"))
@@ -182,4 +183,44 @@ async def admin_report_actions(sender_id: int, letter_id: str):
 async def letter_ban(user_id):
     builder = InlineKeyboardBuilder()
     builder.add(InlineKeyboardButton(text="🚫 Заблокувати користувача", callback_data=f"ban_user_{user_id}"))
+    return builder.as_markup()
+
+# Книга листів (Історія листувань)
+ALL_LETTERS_PAGE_SIZE = 4
+
+async def book_of_letters(letters, total_pages: int, page: int = 0):
+    """Клавіатура з листами для Книги листів"""
+    builder = InlineKeyboardBuilder()
+
+    if not letters:
+        builder.row(InlineKeyboardButton(text="🔙 Закрити", callback_data="close_book"))
+        return builder.as_markup()
+
+    for letter in letters:
+        nickname = letter.get('nickname', 'Анонім')
+        created_at = letter.get('created_at')
+        time_str = created_at.strftime('%d.%m') if created_at else "??.??"
+        
+        content = letter.get('content', '')
+        preview = content[:20] + "..." if len(content) > 20 else content
+        sent_to = "◀️" if letter.get('sender_id') else "▶️"
+        
+        btn_text = f"{sent_to} {nickname} [{time_str}] {preview}"
+
+        builder.add(InlineKeyboardButton(text=btn_text, callback_data=f"book_letter_{letter['_id']}"))
+
+    builder.adjust(1)
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"book_page_{page - 1}"))
+    
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton(text="Далі ➡️", callback_data=f"book_page_{page + 1}"))
+
+    if nav_row:
+        builder.row(*nav_row)
+
+    builder.row(InlineKeyboardButton(text="🔙 Закрити Книгу", callback_data="close_book"))
+
     return builder.as_markup()
