@@ -148,7 +148,8 @@ async def read_letter(callback: CallbackQuery, state: FSMContext):
     
     content = letter.get('content', '')
     date_sent = letter.get('created_at').strftime('%d.%m.%Y %H:%M')
-    text = MESSAGES["inbox_letter_format"].format(date=date_sent, content=content)
+    nickname = letter.get('nickname', 'Анонім')
+    text = MESSAGES["inbox_letter_format"].format(date=date_sent, content=content, nickname=nickname)
     
     await callback.message.answer(text, reply_markup=await keyboards.letter_options(letter_id))
 
@@ -208,6 +209,90 @@ async def view_history(message: Message, state: FSMContext):
     full_text = "\n".join(text_lines)
     
     await message.answer(full_text, parse_mode="HTML", reply_markup=await keyboards.history_nav_v2(current_page, total_pages))
+
+# Перейменування листів
+
+@router.message(F.text == "📝 Перейменувати")
+async def rename_letter_start(message: Message, state: FSMContext):
+    data = await state.get_data()
+    letter_id = data.get("current_letter_id")
+
+    if not letter_id:
+        await message.answer("❌ Лист не знайдено!")
+        return
+    
+    letter = await db.get_letter(letter_id)
+    if not letter:
+        await message.answer("❌ Лист не знайдено!")
+        return
+
+    current_nickname = letter.get('nickname', 'Анонім')
+    await state.update_data(renaming_letter_id=letter_id)
+    
+    msg = await message.answer("*", reply_markup=ReplyKeyboardRemove())
+    await msg.delete()
+    
+    await message.answer(
+        MESSAGES['rename_letter_prompt'] + f"\n\n<i>Поточне ім'я: <b>{current_nickname}</b></i>",
+        reply_markup=await keyboards.cancel_menu()
+    )
+    await state.set_state(InboxState.renaming_letter)
+
+@router.message(InboxState.renaming_letter, F.text == "🔙 Повернутися назад")
+async def cancel_rename_letter(message: Message, state: FSMContext):
+    data = await state.get_data()
+    letter_id = data.get("current_letter_id")
+    
+    await state.clear()
+    await state.update_data(current_letter_id=letter_id)
+    
+    letter = await db.get_letter(letter_id)
+    if not letter:
+        await message.answer("❌ Лист не знайдено!")
+        await state.clear()
+        return
+    
+    content = letter.get('content', '')
+    date_sent = letter.get('created_at').strftime('%d.%m.%Y %H:%M')
+    nickname = letter.get('nickname', 'Анонім')
+    text = MESSAGES["inbox_letter_format"].format(date=date_sent, content=content, nickname=nickname)
+    
+    await message.answer(text, reply_markup=await keyboards.letter_options(letter_id))
+
+@router.message(InboxState.renaming_letter, F.text)
+async def process_rename_letter(message: Message, state: FSMContext):
+    new_nickname = message.text
+    
+    # Валідація
+    if len(new_nickname.strip()) == 0 or len(new_nickname) > 30:
+        await message.answer(MESSAGES['rename_letter_error'])
+        return
+    
+    data = await state.get_data()
+    letter_id = data.get("renaming_letter_id")
+    current_letter_id = data.get("current_letter_id")
+    
+    # Оновлення нікнейму
+    success = await db.update_letter_nickname(letter_id, new_nickname)
+    
+    if success:
+        await state.clear()
+        await state.update_data(current_letter_id=current_letter_id)
+        
+        # Показати оновлений лист з новим нікнеймом
+        letter = await db.get_letter(letter_id)
+        content = letter.get('content', '')
+        date_sent = letter.get('created_at').strftime('%d.%m.%Y %H:%M')
+        nickname = letter.get('nickname', 'Анонім')
+        text = MESSAGES["inbox_letter_format"].format(date=date_sent, content=content, nickname=nickname)
+        
+        await message.answer(
+            MESSAGES['rename_letter_success'].format(nickname=new_nickname),
+            reply_markup=ReplyKeyboardRemove()
+        )
+        await message.answer(text, reply_markup=await keyboards.letter_options(letter_id))
+    else:
+        await message.answer(MESSAGES['rename_letter_error'])
 
 # Відповіді на листи
 
@@ -480,10 +565,11 @@ async def close_history(callback: CallbackQuery, state: FSMContext):
     content = letter.get('content', '')
     created_at = letter.get('created_at')
     date_str = created_at.strftime('%d.%m %H:%M') if created_at else "Невідомо"
+    nickname = letter.get('nickname', 'Анонім')
     
     await state.update_data(history_other_id=None, history_page=None, history_me_id=None)
     
-    await callback.message.answer(MESSAGES['inbox_letter_format'].format(date=date_str, content=content), parse_mode="HTML", reply_markup=await keyboards.letter_options(letter_id))
+    await callback.message.answer(MESSAGES['inbox_letter_format'].format(date=date_str, content=content, nickname=nickname), parse_mode="HTML", reply_markup=await keyboards.letter_options(letter_id))
 
 # Архівування листів
 

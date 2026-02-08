@@ -12,6 +12,10 @@ academic_year = InlineKeyboardMarkup(
         [
             InlineKeyboardButton(text="🧠 3-ий курс", callback_data="third_year"),
             InlineKeyboardButton(text="🦁 4-ий курс", callback_data="fourth_year")
+        ],
+        [
+            InlineKeyboardButton(text="👨‍🎓 5-ий курс", callback_data="fifth_year"),
+            InlineKeyboardButton(text="👨‍🏫 6-ий курс", callback_data="sixth_year")
         ]
     ]
 )
@@ -131,14 +135,14 @@ async def letter_options(letter_id):
     builder = ReplyKeyboardBuilder()
     
     builder.row(KeyboardButton(text="✍️ Відповісти"))
-    builder.row(KeyboardButton(text="📜 Історія листування"), KeyboardButton(text="🗃 Архівувати"))
-    builder.row(KeyboardButton(text="🔙 Назад до вхідних"), KeyboardButton(text="⚠️ Поскаржитись"))
+    builder.row(KeyboardButton(text="� Перейменувати"), KeyboardButton(text="📜 Історія листування"))
+    builder.row(KeyboardButton(text="🗃 Архівувати"), KeyboardButton(text="⚠️ Поскаржитись"))
+    builder.row(KeyboardButton(text="🔙 Назад до вхідних"))
 
     return builder.as_markup(resize_keyboard=True)
 
 # Історія листування
 async def history_nav_v2(page: int, total_pages: int):
-    """Навігація для історії листування з урахуванням ліміту символів"""
     builder = InlineKeyboardBuilder()
 
     nav_row = []
@@ -169,7 +173,7 @@ async def admin_menu():
 async def admin_report_actions(sender_id: int, letter_id: str):
     builder = InlineKeyboardBuilder()
     
-    builder.add(InlineKeyboardButton(text="🔨 БАН", callback_data=f"adm_ban_{sender_id}_{letter_id}"))
+    builder.add(InlineKeyboardButton(text="🔨 Бан", callback_data=f"adm_ban_{sender_id}_{letter_id}"))
     builder.add(InlineKeyboardButton(text="⚠️ Варн", callback_data=f"adm_warn_{sender_id}_{letter_id}"))
     builder.add(InlineKeyboardButton(text="🗑 Відхилити", callback_data=f"adm_dismiss_{sender_id}_{letter_id}"))
     

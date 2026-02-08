@@ -15,6 +15,7 @@ class InboxState(StatesGroup):
     replying = State()
     current_letter_id = State()
     reply_to_id = State()
+    renaming_letter = State()
 
 class AdminState(StatesGroup):
     main = State()

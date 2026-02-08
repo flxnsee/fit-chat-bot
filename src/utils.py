@@ -14,12 +14,12 @@ BAD_WORDS = [
 
 # Регулярний вираз для виявлення посилань
 URL_PATTERN = re.compile(
-    r'(?:http[s]?://[^\s]+|'  # HTTP/HTTPS посилання
-    r'www\.[^\s]+|'            # www посилання
-    r'ftp://[^\s]+|'           # FTP посилання
-    r't\.me/[^\s]+|'           # Telegram посилання
-    r'@\w+|'                   # Telegram username (@username)
-    r'(?:https?://)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}[^\s]*)',  # Доменні імена
+    r'(?:http[s]?://[^\s]+|'
+    r'www\.[^\s]+|'
+    r'ftp://[^\s]+|'
+    r't\.me/[^\s]+|'
+    r'@\w+|'
+    r'(?:https?://)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}[^\s]*)',
     re.IGNORECASE
 )
 
@@ -33,5 +33,4 @@ def contains_bad_words(text: str) -> bool:
     return False
 
 def contains_links_or_urls(text: str) -> bool:
-    """Перевіряє чи текст содержит посилання або URL-адреса"""
     return bool(URL_PATTERN.search(text))

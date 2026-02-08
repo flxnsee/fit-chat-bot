@@ -30,13 +30,15 @@ async def cmd_start(message: Message, state: FSMContext):
         await message.answer(MESSAGES['ask_course'], reply_markup=keyboards.academic_year)
         await state.set_state(Registration.academic_year)
 
-@router.callback_query(Registration.academic_year, F.data.in_(["first_year", "second_year", "third_year", "fourth_year"]))
+@router.callback_query(Registration.academic_year, F.data.in_(["first_year", "second_year", "third_year", "fourth_year", "fifth_year", "sixth_year"]))
 async def academic_year(callback: CallbackQuery, state: FSMContext):
     course_map = {
         "first_year": "1-ий",
         "second_year": "2-ий",
         "third_year": "3-ий",
         "fourth_year": "4-ий",
+        "fifth_year": "5-ий",
+        "sixth_year": "6-ий",
     }
 
     selected_course = course_map.get(callback.data)
@@ -143,13 +145,15 @@ async def edit_course(message: Message, state: FSMContext):
     await state.set_state(ProfileState.editing_course)
     await message.answer(MESSAGES['ask_course'], reply_markup=keyboards.academic_year)
 
-@router.callback_query(ProfileState.editing_course, F.data.in_(["first_year", "second_year", "third_year", "fourth_year"]))
+@router.callback_query(ProfileState.editing_course, F.data.in_(["first_year", "second_year", "third_year", "fourth_year", "fifth_year", "sixth_year"]))
 async def update_course(callback: CallbackQuery, state: FSMContext):
     course_map = {
         "first_year": "1-ий",
         "second_year": "2-ий",
         "third_year": "3-ий",
         "fourth_year": "4-ий",
+        "fifth_year": "5-ий",
+        "sixth_year": "6-ий",
     }
 
     new_course = course_map.get(callback.data)

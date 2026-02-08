@@ -194,6 +194,10 @@ async def create_letter(sender_id: int, recipient_id: int, content: str, delay_h
     try:
         deliver_at = datetime.now() + timedelta(hours = delay_hours)
 
+        # Генерація номеру для анонімного імені
+        anonymous_number = await get_next_anonymous_number(recipient_id)
+        default_nickname = f"Анонім {anonymous_number}"
+
         letter = {
             "sender_id": sender_id,
             "recipient_id": recipient_id,
@@ -203,7 +207,8 @@ async def create_letter(sender_id: int, recipient_id: int, content: str, delay_h
             "is_archived": False,
             "parent_id": ObjectId(parent_id) if parent_id else None,
             "created_at": datetime.now(),
-            "deliver_at": deliver_at
+            "deliver_at": deliver_at,
+            "nickname": default_nickname
         }
 
         await letters_collection.insert_one(letter)
@@ -723,3 +728,42 @@ async def get_dialogue_history_with_pagination(user_id: int, other_user_id: int,
     except PyMongoError as e:
         logger.error(f"Error getting dialogue history with pagination: {e}")
         return [], 0, 0, 0
+
+async def get_next_anonymous_number(recipient_id: int) -> int:
+    """Отримати наступний номер для анонімного імені"""
+    try:
+        # Рахуємо листи від цього користувача, які вже отримали
+        count = await letters_collection.count_documents({
+            "recipient_id": recipient_id,
+            "status": "delivered"
+        })
+        return count + 1
+    except PyMongoError as e:
+        logger.error(f"Error getting next anonymous number: {e}")
+        return 1
+
+async def update_letter_nickname(letter_id: str, new_nickname: str) -> bool:
+    """Оновити нікнейм листа"""
+    try:
+        if not ObjectId.is_valid(letter_id):
+            return False
+        
+        # Обмеження довжини нікнейму
+        if len(new_nickname) > 30:
+            new_nickname = new_nickname[:30]
+        
+        if len(new_nickname.strip()) == 0:
+            return False
+        
+        result = await letters_collection.update_one(
+            {'_id': ObjectId(letter_id)},
+            {
+                '$set': {
+                    'nickname': new_nickname.strip()
+                }
+            }
+        )
+        return result.modified_count > 0
+    except PyMongoError as e:
+        logger.error(f"Error updating letter nickname: {e}")
+        return False
