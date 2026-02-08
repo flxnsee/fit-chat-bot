@@ -201,11 +201,9 @@ async def book_of_letters(letters, total_pages: int, page: int = 0):
         created_at = letter.get('created_at')
         time_str = created_at.strftime('%d.%m') if created_at else "??.??"
         
-        content = letter.get('content', '')
-        preview = content[:20] + "..." if len(content) > 20 else content
         sent_to = "◀️" if letter.get('sender_id') else "▶️"
         
-        btn_text = f"{sent_to} {nickname} [{time_str}] {preview}"
+        btn_text = f"{sent_to} {nickname} [{time_str}]"
 
         builder.add(InlineKeyboardButton(text=btn_text, callback_data=f"book_letter_{letter['_id']}"))
 
